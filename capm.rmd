@@ -1,0 +1,305 @@
+---
+title: "<center> Capital asset pricing model </center>"
+output: 
+    html_document:
+          code_folding: hide
+---
+
+
+<style>
+body {
+    text-align: justify;
+    font-family: Calibri;
+}
+
+h1, .h1, h2, .h2, h3, .h3 {
+  margin-top: 40px;
+}
+
+h1{
+  font-weight: bold;
+  color: teal;
+}
+
+a.anchor-section::before {content: none}
+</style>
+
+-----
+
+<center>
+Karol Doliński
+</center>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+ fig.width = 6,
+ fig.asp = 0.9,
+ out.width = "100%"
+)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(dplyr)
+library(ggplot2)
+library(kableExtra)
+library(plotly)
+library(psych)
+library(reshape)
+library(zoo)
+```
+
+-----
+
+### I. Wprowadzenie
+
+Celem pracy jest dokonanie analizy polskiej giełdy i weryfikacja hipotezy, czy poszczególne indeksy branżowe notowane na polskiej giełdzie zależą tylko od rynku czy wpływają na nie również inne cechy. 
+
+
+Dane zostały pobrane w dniu 29.10.2021 roku ze strony [Stooq](https://stooq.pl/) i dotyczą okresu od marca 2009 roku do września 2021 roku. Zbiór danych dotyczy wartości zamknięcia dla indeksów (w ujęciu miesięcznym):
+
+1. WIG-Banki    
+2. WIG-Budownictwo    
+3. WIG-Chemia  
+4. WIG-Informatyka  
+5. WIG-Media
+6. WIG-Nieruchomości   
+7. WIG-Paliwa   
+8. WIG-Spożywczy   
+9. WIG-Telekomunikacja
+10. WIG
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+wig_m <- read.csv('wig_m.csv')
+wig_banki <- read.csv('wig_banki_m.csv')
+wig_budow <- read.csv('wig_budow_m.csv')
+wig_chemia <- read.csv('wig_chemia_m.csv')
+wig_info <- read.csv('wig_info_m.csv')
+wig_media <- read.csv('wig_media_m.csv')
+wig_nrchom <- read.csv('wig_nrchom_m.csv')
+wig_paliwa <- read.csv('wig_paliwa_m.csv')
+wig_spozyw <- read.csv('wig_spozyw_m.csv')
+wig_telkom <- read.csv('wig_telkom_m.csv')
+
+data <- as.Date(wig_banki$Data)
+
+wig <- as.data.frame(cbind(wig_banki$Data, wig_m$Zamkniecie,  wig_banki$Zamkniecie, wig_budow$Zamkniecie,
+                           wig_chemia$Zamkniecie, wig_info$Zamkniecie, wig_media$Zamkniecie, 
+                           wig_nrchom$Zamkniecie, wig_paliwa$Zamkniecie, wig_spozyw$Zamkniecie,
+                           wig_telkom$Zamkniecie))
+wig$V1 <- as.Date(wig_banki$Data)
+
+colnames(wig) <- c('Data', 'wig', 'wig_banki', 'wig_budow', 'wig_chemia', 'wig_info', 'wig_media',
+                   'wig_nrchom', 'wig_paliwa', 'wig_spozyw', 'wig_telkom')
+
+# Dane z okresu 03.2009 do 09.2021
+dane <- wig[51:201,]
+
+```
+
+-----
+
+### II. Wybrane metody i analiza empiryczna
+
+Rozdział został poświęcony omówieniu wykorzystanych metod oraz przeprowadzeniu analizy empirycznej. 
+
+<br>
+
+#### Stopy zwrotu 
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+T <- nrow(dane) - 1                  
+N <- ncol(dane) - 2                   
+K <- 1                      
+stopa_wolna_od_ryzyka <- 0.01/12
+
+stopa_prosta <- as.data.frame(matrix(data = NA, nrow = nrow(dane)-1, ncol(dane)-1))
+
+for (i in 2 : ncol(dane))
+{
+  for (j in 2 : nrow(dane))
+  {
+    stopa_prosta[j-1, i-1] <- (dane[j,i] - dane[j-1,i])/dane[j-1,i] - stopa_wolna_od_ryzyka
+  }
+}
+
+stats <- describe(stopa_prosta)
+stopa_prosta_stat <- stats[,3:5]
+rownames(stopa_prosta_stat) <- c('wig', 'wig_banki', 'wig_budow', 'wig_chemia', 'wig_info', 'wig_media',
+                                 'wig_nrchom', 'wig_paliwa', 'wig_spozyw', 'wig_telkom')
+colnames(stopa_prosta_stat) <- c('Średnia', 'Odchylenie standardowe', 'Mediana')
+kbl(stopa_prosta_stat) %>% 
+  footnote(general = "Wybrane statystyki opisowe", general_title = "Tabela 1: ", footnote_as_chunk = T) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "float_right")
+```
+Stopa zwrotu jest wskaźnikiem finansowym, miarą ryzyka danego przedsięwzięcia czy inwestycji. Prosta stopa zwrotu mu postać: 
+
+$$R_{t} = \frac{P_t - P_{t-1}}{P_{t-1}}$$
+
+$R_{t}$ - prosta stopa zwrotu  
+$P_{t}$ - wartość zamknięcia indeksu w czasie t  
+$P_{t-1}$ - wartość zamknięcia indeksu w czasie t-1 
+
+<br>
+
+W Tabeli 1 przedstawiono wybrane statystyki opisowe analizowanych indeksów. Średnia miesięczna stopa zwrotu waha się od 0,18% dla WIG-Telekomunikacja do 1,17% dla WIG-Chemia. Z uwagi na to, można stwierdzić, iż inwestycje w badanych branżach przynoszą zysk. Warto zaznaczyć stosunkowo duże odchylenie standardowe. Natomiast mediana przyjmuje wartości od -0,53% do 1,29%. Średnia nie jest bardzo bliska średniej, co może wskazywać na asymetrię próby. 
+
+<br>
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+wykres_p <- cbind(dane[2:151,1], stopa_prosta)
+colnames(wykres_p) <- colnames(dane)
+
+wykres <- melt.data.frame(wykres_p, id=c('Data'))
+colnames(wykres) <- c("Data", "Indeks", "Wartosc")
+wykres$Wartosc <- round(wykres$Wartosc, 3)
+wykres$Data <- as.yearmon(wykres$Data)
+
+p1<-wykres %>%
+  ggplot(aes(x=Data, y=Wartosc, color=Indeks)) +
+  geom_line(alpha=0.7) +
+  geom_point(size=.9)+
+  theme_bw() +
+  geom_hline(yintercept=0, linetype="solid", color = "black", alpha=0.5) +
+  labs(y = "Wartość prostej stopy zwrotu", x="Lata", title = "Wartości prostych stóp zwrotu dla wybranych indeksów") 
+ggplotly(p1) %>% rangeslider(start = wykres$Data[1], end = wykres$Data[150]) %>%
+  layout(autosize = T)
+
+```
+
+
+
+
+#### Model CAPM (Capital asset pricing model)
+
+Wycena instrumentów finansowych może być dokonana za pomocą jednoczynnikowego modelu CAPM (Capital Asset Pricing Model). Postać tego modelu jest następująca: 
+
+$$R_{it} - r_{ft} = \alpha_{i} + \beta_{i}(R_{Mt} - r_{ft}) + \varepsilon_{it}$$
+
+$R_{it}$ - stopa zwrotu i-tego portfela w czasie t 
+
+$r_{ft}$ - stopa zwrotu wolna od ryzyka    
+
+$R_{Mt}$ - stopa zwrotu portfela rynkowego    
+
+$\alpha_{i}$, $\beta_{i}$ - parametry strukturalne modelu   
+
+$\varepsilon_{it}$ - zakłócenia losowe 
+
+<br>
+
+Po oddzielnym oszacowaniu dziewięciu modeli za pomocą metody najmniejszych kwadratów okazuje się, iż macierz wariancji-kowariancji reszt nie jest diagonalna, a co za tym idzie, reszty z poszczególnych modeli są ze sobą skorelowane. 
+
+Właściwa więc wydaje się łączna estymacja modeli, ponieważ może być bardziej efektywna niż estymacja pojedyncza. Model pozornie niezależnych regresji SUR (ang. Seemingly Unrelated Regressions) umożliwia taką estymację z wykorzystaniem uogólnionej metody najmniejszych kwadratów. 
+
+Należy zauważyć, iż model CAPM jest przypadkiem szczególnym, ponieważ zmienną objaśniająca w każdym równaniu jest ta sama zmienna (w omawianej pracy zmienna WIG). W takiej sytuacji metoda SUR jest tak samo efektywna jak estymacja każdego równania z osobna metodą najmniejszych kwadratów. Obie metody dają takie same oszacowania estymatorów. 
+
+Z uwagi na powyższe w pracy dokonano dziewięciu oddzielnych oszacowań estymatorów (dla każdego równania z osobna). 
+
+<br>
+
+#### Macierz wariancji-kowariancji reszt
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+
+alpha <- as.data.frame(matrix(data = NA, nrow = 2, ncol = ncol(stopa_prosta)-1))
+alpha_pvalue <- as.data.frame(matrix(data = NA, nrow = 1, ncol = ncol(stopa_prosta)-1))
+reszty <- as.data.frame(matrix(data = NA, nrow = nrow(stopa_prosta), ncol = ncol(stopa_prosta)-1))
+
+for (k in 2:ncol(stopa_prosta))
+{
+  model <- lm(stopa_prosta[,k] ~ stopa_prosta[,1])
+  reszty[,k-1] <- model$residuals
+  alpha[,k-1] <- model$coefficients
+  alpha_pvalue[,k-1] <- summary(model)$coefficient[1,4]
+}
+
+cov_reszty <- cov(reszty)
+sigma_odwrotna <- as.matrix(solve(cov(reszty)))
+alpha <- as.matrix(alpha)
+alpha_t <- as.matrix(t(alpha))
+
+GRS = (T/N) * ((T-N-K)/(T-K-1) * (alpha[1,] %*% sigma_odwrotna %*% alpha_t[,1]) / 
+                 (1 + mean(stopa_prosta[,1])^2 / var(stopa_prosta[,1])))
+
+rownames(cov_reszty) <- colnames(cov_reszty) <- c('WIG-Banki', 'WIG-Budownictwo', 'WIG-Chemia', 'WIG-Informatyka', 'WIG-Media', 'WIG-Nieruchomości', 'WIG-Paliwa', 'WIG-Spożywczy', 'WIG-Telekomunikacja')
+kbl(cov_reszty) %>%
+  kable_styling(bootstrap_options = c("striped"))
+```
+
+#### Paramtry strukturalne modeli
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+tab <- as.data.frame(rbind(alpha, alpha_pvalue))
+rownames(tab) <- c("Alfa", "Beta", "Wartość p-value dla testu istotności parametru Alfa")
+colnames(tab) <- c('WIG-Banki', 'WIG-Budownictwo', 'WIG-Chemia', 'WIG-Informatyka', 'WIG-Media', 
+  'WIG-Nieruchomości', 'WIG-Paliwa', 'WIG-Spożywczy', 'WIG-Telekomunikacja')
+
+kbl(t(tab), col.names = c("$\\alpha_i$", "$\\beta_i$", 
+                          "Wartość p-value dla testu istotności parametru $\\alpha_i$")) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+
+
+#GRS
+#qf(0.95,N,T-N-K)
+```
+
+<br>
+
+#### Test GRS
+
+Test GRS umożliwia weryfikację, czy wektor $\alpha$ jest istotny. Jeśli nie jest istotny, to znaczy, że ryzko dla poszczególnych portfeli zależy tylko od rynku. 
+
+Hipotezy testu GRS mają postać:
+
+$H_0:\alpha=0$
+
+$H_1:\alpha\neq0$
+
+Statystykę GRS oblicza się według poniższego wzoru:
+
+$$GRS=(\frac{T}{N})(\frac{T-N-K}{T-K-1})(\frac{\hat\alpha^{T}\Sigma^{-1}\hat\alpha}{1+\hat\mu^{T}\hat V^{-1}\hat\mu})$$
+gdzie: 
+
+$T$ - liczba obserwacji
+
+$N$ - liczba portfeli
+
+$K$ - liczba czynników
+
+$\hat\alpha$ - wektor wyrazów wolnych
+
+$\hat\Sigma$ - macierz wariancji-kowariancji reszt
+
+$\hat\mu$ - średnia czynnika WIG
+
+$\hat V$ - wariancja czynnika WIG
+
+<br>
+
+
+
+-----
+
+### III. Podsumowanie
+
+Wartość statystyki GRS jest równa około 1.34. Natomiast wartość krytyczna F o N st. swobody licznika i T-N-K st. swobody mianownika jest równa w przybliżeniu 1.95 (dla przyjętego poziomu istotności: 5%). Z uwagi na to, że wartość statystyki GRS jest mniejsza niż wartość krytyczna F, to brak jest podstaw od odrzucenia hipotezy głównej. Wektor parametrów $\alpha_{i}$ jest nieistotny. Gdyby przyjąć inny, mniejszy niż 5% poziom istotności, to wartość statystyki F byłaby większa niż 1.95, dlatego wniosek byłby taki sam - nieistotność wektora parametrów $\alpha_{i}$. 
+
+
+Zerowa wartość wyrazów wolnych pozwala stwierdzić, iż czynnik uzwględniowny w modelu (WIG) jest wystarczający do określania stóp zwrotu portfeli branżowych. Przeprowadzony test GRS pozwala na stwierdzenie, że stopy zwrotu portfeli branżowych zależą tylko od rynku. 
+
+Ogromną zaletą testu GRS jest fakt, iż pozwala on na sprawdzanie modelu jako całości, a nie dla jednego portfela branżowego. 
+
+Przeprowadzając test istotności stałej dla każdego modelu z osobna dla ośmiu z dziewięciu modelu na poziomie istotności 5% można stwierdzić, iż stała jest nieistotna. Dla WIG-Informatyka p-value jest równe około 0.04, dlatego na poziomie istotności 5% stała ta jest istotna. Gdyby jednak przyjąć inny poziom istotności (np. 1%), to stała byłaby nieistotna w każdym modelu. 
+
+Parametr strukturalny $\beta$ jest większy niż 1 dla WIG-Banki i WIG-Paliwa. Oznacza to, iż są to branże, w które warto inwestować. 
+
+
+-----
+
+
+
+
+
+
+
+
+
+
+
+
